@@ -1,0 +1,93 @@
+<!doctype html>
+<html>
+  <head>
+    <base target="_top" />
+    <meta charset="utf-8" />
+    <style>
+      :root {
+        --bg: #ffffff;
+        --fg: #1d1d1f;
+        --muted: #6e6e73;
+        --line: #e5e5ea;
+        --bar: #3d6fd9;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #141416;
+          --fg: #f2f2f7;
+          --muted: #98989f;
+          --line: #2a2a2e;
+          --bar: #6f96ee;
+        }
+      }
+      body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; }
+      h1 { font-size: 18px; margin: 0 0 4px; }
+      .muted { color: var(--muted); }
+      .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin: 16px 0; }
+      .kpi { border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+      .kpi b { display: block; font-size: 22px; }
+      table { border-collapse: collapse; width: 100%; margin: 8px 0 20px; }
+      th, td { text-align: right; padding: 4px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+      th:first-child, td:first-child { text-align: left; }
+      .bar { display: inline-block; height: 8px; background: var(--bar); border-radius: 2px; vertical-align: middle; }
+    </style>
+  </head>
+  <body>
+    <h1>Telemetry</h1>
+    <div class="muted" id="meta">Loading...</div>
+    <div class="kpis" id="kpis"></div>
+    <h2>Funnel</h2>
+    <table id="funnel"></table>
+    <h2>Daily (prod only)</h2>
+    <table id="daily"></table>
+    <p class="muted">Sessions are devices, not people. A dash means the event did not exist yet that day.</p>
+    <script>
+      function esc(s) {
+        return String(s).replace(/[&<>"]/g, function (c) {
+          return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+        });
+      }
+      function cell(v) {
+        return v === null || v === undefined ? "&ndash;" : esc(v);
+      }
+      function render(d) {
+        document.getElementById("meta").textContent = "Generated " + d.generatedAt;
+        var k = d.kpis;
+        var tiles = [
+          ["Sessions", k.sessions],
+          ["Active days", k.days],
+          ["Started", k.starts],
+          ["Finished", k.done],
+          ["Completion %", k.completionPct],
+        ];
+        document.getElementById("kpis").innerHTML = tiles
+          .map(function (t) {
+            return '<div class="kpi"><span class="muted">' + esc(t[0]) + "</span><b>" + cell(t[1]) + "</b></div>";
+          })
+          .join("");
+        var max = Math.max.apply(null, d.funnel.map(function (f) { return f.n; }).concat([1]));
+        document.getElementById("funnel").innerHTML =
+          "<tr><th>Event</th><th>Count</th><th></th></tr>" +
+          d.funnel
+            .map(function (f) {
+              var w = Math.round((f.n / max) * 200);
+              return "<tr><td>" + esc(f.event) + "</td><td>" + f.n + '</td><td><span class="bar" style="width:' + w + 'px"></span></td></tr>';
+            })
+            .join("");
+        var head = "<tr><th>Day</th><th>Sessions</th>" + d.events.map(function (e) { return "<th>" + esc(e) + "</th>"; }).join("") + "</tr>";
+        var rows = d.daily
+          .slice()
+          .reverse()
+          .map(function (r) {
+            return "<tr><td>" + esc(r.key) + "</td><td>" + r.sessions + "</td>" + d.events.map(function (e) { return "<td>" + cell(r.c[e]) + "</td>"; }).join("") + "</tr>";
+          })
+          .join("");
+        document.getElementById("daily").innerHTML = head + rows;
+      }
+      function fail(err) {
+        document.getElementById("meta").textContent = "Error: " + (err && err.message ? err.message : err);
+      }
+      google.script.run.withSuccessHandler(render).withFailureHandler(fail).getData();
+    </script>
+  </body>
+</html>

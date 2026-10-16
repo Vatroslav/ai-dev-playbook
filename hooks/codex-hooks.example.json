@@ -1,0 +1,25 @@
+{
+  "description": "User-level guards for OpenAI Codex (~/.codex/hooks.json). Copy the scripts to ~/.codex/hooks/ first, then trust the hooks with /hooks. Codex parses permissionDecision 'ask' but does not support it (the call proceeds), so guards that would ask run with --codex and block with exit 2 instead. File-edit guards (guard-paths, format-on-save, check-version-decrease) are Claude-only: Codex edits through apply_patch, whose input has no file_path.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "bash ~/.codex/hooks/guard-rm.sh --codex", "timeout": 30, "statusMessage": "Checking for deletes" },
+          { "type": "command", "command": "bash ~/.codex/hooks/guard-git-add-all.sh", "timeout": 30 },
+          { "type": "command", "command": "bash ~/.codex/hooks/guard-secrets.sh", "timeout": 30 },
+          { "type": "command", "command": "bash ~/.codex/hooks/guard-git-remote.sh", "timeout": 30 },
+          { "type": "command", "command": "bash ~/.codex/hooks/check-delete-transaction.sh --codex", "timeout": 30 }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          { "type": "command", "command": "python3 ~/.codex/hooks/freshness-check.py 2>/dev/null || python ~/.codex/hooks/freshness-check.py", "timeout": 30 }
+        ]
+      }
+    ]
+  }
+}

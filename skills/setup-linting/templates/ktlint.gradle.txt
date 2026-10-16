@@ -1,0 +1,6 @@
+// Add to build.gradle.kts (root and each module).
+// The version below is an example: look up the current release of
+// org.jlleitschuh.gradle.ktlint on the Gradle Plugin Portal before pinning it.
+plugins {
+    id("org.jlleitschuh.gradle.ktlint") version "12.1.2"
+}

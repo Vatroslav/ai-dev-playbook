@@ -1,0 +1,7 @@
+{
+  "root": "~/code",
+  "repos": [
+    {"name": "my-app", "log": "docs/decisions-yourhandle.md"},
+    {"name": "my-app-api", "log": "docs/decisions-yourhandle.md", "skip_commands": ["triage"]}
+  ]
+}

@@ -1,0 +1,2 @@
+# Git hooks must keep LF endings: with CRLF, bash fails ("bad interpreter")
+* text eol=lf

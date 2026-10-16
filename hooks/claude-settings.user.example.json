@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(git branch --show-current)",
+      "Bash(git fetch*)",
+      "Bash(gh pr view*)",
+      "Bash(gh pr list*)",
+      "Bash(gh pr checks*)",
+      "Bash(gh run view*)",
+      "Bash(gh run list*)",
+      "Bash(ls *)",
+      "Bash(pwd)",
+      "Bash(npm test*)",
+      "Bash(npm run lint*)",
+      "Bash(npm run typecheck*)",
+      "Bash(pnpm test*)",
+      "Bash(pnpm lint*)",
+      "Bash(pnpm typecheck*)",
+      "Bash(pytest*)",
+      "Bash(ruff check*)",
+      "WebSearch"
+    ],
+    "deny": [
+      "Read(**/secrets/**)",
+      "Read(**/.env)",
+      "Read(**/.env.local)",
+      "Read(**/.env.*.local)",
+      "Read(**/.env.development)",
+      "Read(**/.env.staging)",
+      "Read(**/.env.production)",
+      "Read(**/.envrc)",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.config/gcloud/**)",
+      "Read(~/.azure/**)",
+      "Read(~/.kube/**)",
+      "Read(~/.docker/config.json)",
+      "Read(~/.git-credentials)",
+      "Read(~/.netrc)",
+      "Read(~/.npmrc)",
+      "Read(~/.config/gh/hosts.yml)",
+      "Bash(gh auth token)",
+      "Bash(gh auth token *)",
+      "Bash(gh auth status --show-token*)",
+      "Bash(gh auth status -t*)",
+      "Bash(gh auth status * --show-token*)",
+      "Bash(gh auth status * -t*)",
+      "Bash(gh repo delete *)",
+      "Bash(git credential *)",
+      "Bash(env)",
+      "Bash(printenv)",
+      "Bash(printenv *)",
+      "Bash(export -p)",
+      "PowerShell(Get-ChildItem env:*)"
+    ],
+    "ask": [
+      "Bash(git push --force*)",
+      "Bash(git push * --force*)",
+      "Bash(git push -f*)",
+      "Bash(git push * -f*)",
+      "Bash(git push * +*)",
+      "Bash(git push * --delete *)",
+      "Bash(git push * :*)",
+      "Bash(git branch -D *)",
+      "Bash(git branch -d *)",
+      "Bash(git branch --delete *)",
+      "Bash(git reset --hard*)",
+      "Bash(git clean*)",
+      "Bash(git checkout -- *)",
+      "Bash(git restore *)",
+      "Bash(git stash drop*)",
+      "Bash(git stash clear*)",
+      "Bash(gh pr merge *--admin*)",
+      "Bash(gh repo create *)",
+      "Bash(gh repo edit *)",
+      "Bash(gh repo rename *)",
+      "Bash(gh repo archive *)",
+      "Bash(gh repo unarchive *)",
+      "Bash(gh release delete *)",
+      "Bash(gh gist create *)",
+      "Bash(gh secret *)",
+      "Bash(gh variable *)",
+      "Bash(gh api *DELETE*)",
+      "Bash(gh api *PATCH*)",
+      "Bash(gh api *PUT*)",
+      "Bash(gh api *POST*)",
+      "Bash(gh api * -f *)",
+      "Bash(gh api * -F *)",
+      "Bash(gh api * --field*)",
+      "Bash(gh api * --raw-field*)",
+      "Bash(gh api * --input*)",
+      "Bash(npm publish*)",
+      "Bash(pnpm publish*)",
+      "Bash(docker system prune*)",
+      "Bash(docker volume rm *)",
+      "Bash(docker volume prune*)",
+      "Edit(~/.ssh/**)",
+      "Write(~/.ssh/**)",
+      "Edit(~/.claude/settings.json)",
+      "Write(~/.claude/settings.json)",
+      "Edit(~/.claude/hooks/**)",
+      "Write(~/.claude/hooks/**)",
+      "Edit(**/.claude/settings*.json)",
+      "Write(**/.claude/settings*.json)",
+      "Edit(**/.claude/hooks/**)",
+      "Write(**/.claude/hooks/**)",
+      "Edit(**/.mcp.json)",
+      "Write(**/.mcp.json)",
+      "Edit(**/.codex/**)",
+      "Write(**/.codex/**)",
+      "Edit(**/githooks/**)",
+      "Write(**/githooks/**)",
+      "Edit(**/.github/workflows/**)",
+      "Write(**/.github/workflows/**)"
+    ]
+  },
+  "enableAllProjectMcpServers": false,
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          { "type": "command", "command": "bash ~/.claude/hooks/guard-rm.sh" },
+          { "type": "command", "command": "bash ~/.claude/hooks/guard-git-add-all.sh" },
+          { "type": "command", "command": "bash ~/.claude/hooks/guard-secrets.sh" },
+          { "type": "command", "command": "bash ~/.claude/hooks/guard-git-remote.sh" },
+          { "type": "command", "command": "bash ~/.claude/hooks/check-delete-transaction.sh" }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          { "type": "command", "command": "bash ~/.claude/hooks/guard-paths.sh" }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          { "type": "command", "command": "python3 ~/.claude/hooks/freshness-check.py 2>/dev/null || python ~/.claude/hooks/freshness-check.py" }
+        ]
+      }
+    ]
+  }
+}

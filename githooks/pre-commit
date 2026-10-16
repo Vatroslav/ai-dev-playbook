@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# pre-commit hook: scan STAGED changes for secrets with gitleaks before they enter git history.
+#
+# This is the main defense against "the agent commits and pushes a token" (prompt injection or
+# plain accident): if the secret never enters a commit, it does not matter where the push goes.
+#
+# Install (pick one, see hooks/README.md):
+#   per repo, shared by the team:  git config core.hooksPath githooks
+#   per machine, every repo:       git config --global core.hooksPath ~/.config/git/hooks
+#                                  (copy this file there and chmod +x it)
+# Caveats:
+# - A GLOBAL core.hooksPath makes git ignore every repo's .git/hooks/ - this script chains the
+#   repo's own .git/hooks/pre-commit at the end so it still runs.
+# - A repo-LOCAL core.hooksPath (husky sets one) overrides the global one, so a global scan
+#   silently does not run there - call gitleaks from that repo's own pre-commit as well.
+# - False positive: add its fingerprint to .gitleaksignore (with a comment). Last resort:
+#   git commit --no-verify - bypasses the protection, only after checking the finding by eye.
+# - Requires gitleaks 8.19+ (`gitleaks git --staged`); older versions use `gitleaks protect --staged`.
+# - Verify the install: stage a fake key that is NOT on the gitleaks allowlist (the classic
+#   AWS documentation example key is allowlisted and will not trigger) and try to commit.
+
+GITLEAKS_BIN="${GITLEAKS_BIN:-}"
+if [ -z "$GITLEAKS_BIN" ] && command -v gitleaks >/dev/null 2>&1; then
+  GITLEAKS_BIN="gitleaks"
+fi
+# Windows: right after `winget install`, PATH is not refreshed until the shell/app restarts -
+# set GITLEAKS_BIN to the absolute path of gitleaks.exe in that case.
+
+if [ -z "$GITLEAKS_BIN" ]; then
+  echo "WARNING: gitleaks not found - secret scan SKIPPED for this commit." >&2
+  echo "Install: brew install gitleaks | winget install --id Gitleaks.Gitleaks | https://github.com/gitleaks/gitleaks" >&2
+  exit 0   # fail-open by choice, but loudly; change to `exit 1` to make gitleaks mandatory
+fi
+
+"$GITLEAKS_BIN" git --staged --redact --no-banner
+status=$?
+
+if [ "$status" -ne 0 ]; then
+  echo "" >&2
+  echo "=========================================================" >&2
+  echo "COMMIT BLOCKED: gitleaks found a possible secret in the staged changes." >&2
+  echo "Check the findings above. If it really is a false positive:" >&2
+  echo "  - add its fingerprint to .gitleaksignore in the repo, or" >&2
+  echo "  - git commit --no-verify (USE WITH CARE - bypasses the protection)." >&2
+  echo "If it is real: unstage it, move it to a gitignored secrets/ file or the secret" >&2
+  echo "manager, and rotate it if it was ever pushed anywhere." >&2
+  echo "=========================================================" >&2
+  exit "$status"
+fi
+
+# Chain the repo's own hook (git ignores .git/hooks when core.hooksPath points elsewhere).
+# Skip it when core.hooksPath already points at .git/hooks (this file would call itself).
+REPO_HOOK="$(git rev-parse --git-dir)/hooks/pre-commit"
+if [ -x "$REPO_HOOK" ] && [ "$(cd "$(dirname "$REPO_HOOK")" && pwd -P)" != "$(cd "$(dirname "$0")" && pwd -P)" ]; then
+  "$REPO_HOOK" || exit $?
+fi
+exit 0

@@ -1,0 +1,34 @@
+# Copy to .github/dependabot.yml.
+#
+# Actions are pinned to full commit SHAs, because a floating tag (@v4) can be repointed to a
+# malicious commit. Pinning also freezes security fixes; Dependabot restores freshness.
+# Dependabot PRs are NOT auto-merged: a human reads the diff (for actions: the release notes of
+# the new SHA) and merges. Grouping keeps it to one PR per ecosystem per week.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"            # conventional type: no version bump needed
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  # OPTIONAL: npm dependencies. Remove this block if the weekly PR becomes noise nobody reads;
+  # an unread update PR is worse than none.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"         # a dependency update that changes runtime behaviour still needs a bump
+    groups:
+      npm-dependencies:
+        patterns: ["*"]
+    # Known-breaking majors: ignore them with a comment saying why and when to remove the rule.
+    # ignore:
+    #   - dependency-name: "some-sdk"
+    #     versions: [">=3"]     # v3 removed an API we import; remove once the code is migrated

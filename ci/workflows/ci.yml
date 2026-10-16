@@ -1,0 +1,156 @@
+# CI: one required job named `check`. Copy to .github/workflows/ci.yml.
+#
+# BEFORE FIRST USE:
+#   1. Swap every `PIN_TO_FULL_COMMIT_SHA` for the full 40-character commit SHA of that
+#      action's release, and keep the `# vX.Y.Z` comment in sync (see ci/README.md).
+#   2. Set "packageManager": "pnpm@<exact version>" in package.json (Corepack reads it).
+#   3. Make sure package.json has the scripts used below: lint, typecheck, test, build
+#      (and test:db if you keep the Postgres block).
+#   4. Copy ci/scripts/*.mjs to scripts/.
+#   5. Delete the "OPTIONAL: Postgres" steps if the app has no Postgres.
+#   6. In the repo ruleset, make `check` the required status check.
+
+name: CI
+
+# PR only: every commit on main is a squash of a PR that already passed `check`.
+# Accepted risk: semantic merge skew between two green PRs. The post-deploy staging smoke
+# test catches it, and the blast radius is staging.
+on:
+  pull_request:
+
+# A new push to the same PR cancels the stale run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege. This workflow runs on PR code, so it never gets id-token or write scopes.
+permissions:
+  contents: read
+
+jobs:
+  # ONE job: GitHub bills at least one minute per job, so many tiny jobs cost real minutes.
+  # The job ALWAYS runs because it is the required check: a skipped required check stays
+  # "Expected" and blocks the merge. Heavy steps are skipped for docs-only PRs instead.
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"   # never wait for a "download pnpm?" confirmation
+    steps:
+      - uses: actions/checkout@PIN_TO_FULL_COMMIT_SHA # vX.Y.Z
+        with:
+          fetch-depth: 2            # PR merge commit + both parents: diff and version compare against the base
+          persist-credentials: false
+
+      - name: Docs only?
+        id: scope
+        run: node scripts/ci-docs-only.mjs
+
+      # ---- OPTIONAL: Postgres (delete this block if you have no database) -----------------
+      # Same MAJOR version as production. Started in the background so the image pull
+      # overlaps dependency install. The password is a throwaway that protects nothing,
+      # so it lives here, not in secrets (a secret would suggest it guards something).
+      - name: "OPTIONAL: Postgres (background)"
+        if: steps.scope.outputs.docs_only != 'true'
+        run: |
+          nohup docker run -d --name ci-postgres -p 5432:5432 \
+            -e POSTGRES_PASSWORD=ci-throwaway postgres:17 \
+            > /tmp/ci-postgres.log 2>&1 &
+      # ---------------------------------------------------------------------------------------
+
+      # Corepack instead of a third-party setup action: CI, cloud shells and laptops all run
+      # the exact pnpm version pinned in package.json "packageManager".
+      - name: Set up pnpm (Corepack)
+        if: steps.scope.outputs.docs_only != 'true'
+        run: corepack enable
+
+      - uses: actions/setup-node@PIN_TO_FULL_COMMIT_SHA # vX.Y.Z
+        if: steps.scope.outputs.docs_only != 'true'
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # --frozen-lockfile: install exactly the lockfile, fail on drift. A stale lockfile is a
+      # PR bug, not something CI should quietly fix.
+      - name: Install
+        if: steps.scope.outputs.docs_only != 'true'
+        run: pnpm install --frozen-lockfile
+
+      # ---- OPTIONAL: Postgres -----------------------------------------------------------------
+      - name: "OPTIONAL: Postgres ready"
+        if: steps.scope.outputs.docs_only != 'true'
+        run: |
+          for _ in $(seq 1 90); do
+            docker exec ci-postgres pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1 && exit 0
+            sleep 1
+          done
+          echo "::error::Postgres not up after 90 s"; docker logs ci-postgres || true; exit 1
+
+      # Role split as in production: the OWNER runs migrations and is NOT a superuser
+      # (a superuser bypasses row-level security, so RLS tests would pass for the wrong reason).
+      # The APP user owns nothing and cannot bypass RLS.
+      - name: "OPTIONAL: Create database roles"
+        if: steps.scope.outputs.docs_only != 'true'
+        run: |
+          docker exec -i ci-postgres psql -v ON_ERROR_STOP=1 -U postgres <<'SQL'
+          create role app_owner login password 'ci-throwaway' nosuperuser nocreatedb nocreaterole;
+          create role app_user login password 'ci-throwaway' nosuperuser nocreatedb nocreaterole nobypassrls;
+          create database app_ci owner app_owner;
+          SQL
+
+      # Each step declares its own connection string, so it is visible which role does what.
+      - name: "OPTIONAL: Migrate (as owner, never as the app user)"
+        if: steps.scope.outputs.docs_only != 'true'
+        env:
+          MIGRATE_DATABASE_URL: postgresql://app_owner:ci-throwaway@127.0.0.1:5432/app_ci
+        run: pnpm db:migrate        # e.g. "prisma migrate deploy"; must read MIGRATE_DATABASE_URL
+
+      - name: "OPTIONAL: Database tests (as the app user)"
+        if: steps.scope.outputs.docs_only != 'true'
+        env:
+          MIGRATE_DATABASE_URL: postgresql://app_owner:ci-throwaway@127.0.0.1:5432/app_ci
+          DATABASE_URL: postgresql://app_user:ci-throwaway@127.0.0.1:5432/app_ci
+        run: pnpm test:db
+      # ---------------------------------------------------------------------------------------
+
+      # Order: security-boundary guards first (the most important failure is the first one you see),
+      # then lint, types, tests, build. Add your boundary scripts here, e.g.:
+      #   node scripts/check-forbidden-refs.mjs
+
+      - name: Lint
+        if: steps.scope.outputs.docs_only != 'true'
+        run: pnpm lint
+
+      # Whole project INCLUDING test files: Vitest/esbuild strip types and framework builds
+      # skip tests, so a type error in a test would otherwise reach main unnoticed.
+      - name: Typecheck
+        if: steps.scope.outputs.docs_only != 'true'
+        run: pnpm typecheck
+
+      - name: Test
+        if: steps.scope.outputs.docs_only != 'true'
+        run: pnpm test
+
+      # The CI scripts test themselves: a guard that exits 0 on everything looks like a pass.
+      - name: CI script tests
+        if: steps.scope.outputs.docs_only != 'true'
+        run: node --test scripts/*.test.mjs
+
+      # Build without database access. If the build starts needing one, notice it here.
+      - name: Build
+        if: steps.scope.outputs.docs_only != 'true'
+        run: pnpm build
+
+      # OPTIONAL: if you deploy a container, build the image here too. The test suite never
+      # builds it, so a missing COPY passes every test and crash-loops at deploy.
+      # - name: Image builds
+      #   if: steps.scope.outputs.docs_only != 'true'
+      #   run: docker build -t app:ci .
+
+      # Last on purpose: lint/type/test results still show when only the bump is missing.
+      # Runs on docs-only PRs too ("feat:" without a bump is wrong there as well).
+      # The PR title goes through env, never inlined into `run:` (script injection).
+      - name: Version by intent
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: node scripts/check-version-bump.mjs

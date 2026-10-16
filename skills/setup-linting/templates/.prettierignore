@@ -1,0 +1,15 @@
+# Build output and generated files
+dist/
+build/
+coverage/
+.next/
+out/
+*.min.js
+
+# Lockfiles are machine-written
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# Docs are prose; the format-on-save hook skips them too
+*.md
