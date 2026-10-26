@@ -57,6 +57,8 @@ Before trusting a reviewer in a new environment (a sandbox, a cloud runner, anot
 
 Built-in review commands of your agent tool are useful extra signals, but they don't replace this panel: the gate depends on the VERDICT line.
 
+**A cheap review level is only as good as the repo's description of what counts as a defect.** If you run a built-in review command at its lowest level as a gate before every push (a hook, see [hooks](../hooks/README.md#writing-a-new-hook)), add a short section to the repo's instructions on what is broken in this codebase: the rules a change most often violates, with one concrete example each. In blind tests on old PRs that introduced known defects, the lowest level found them only once that section existed; without it, only the deepest level did, at several times the run time. In another repo the lowest level missed both known defects in every run, even with the section; one of them could only be seen in code outside the diff, which the lowest level does not read. Measure the gate on a few of your own past defects before trusting it, and treat the section as part of the gate: shortening it weakens the review.
+
 ## Credits
 
 `logic-reviewer`, `quality-reviewer` and `security-reviewer` are adapted from the "anvil" reviewer agents in [SenteLabsAI/OpenExecutive](https://github.com/SenteLabsAI/OpenExecutive/tree/69c0ae33eaeab05575a11eda7829bf7cc9ae3d08/.claude/agents) (Copyright 2025 Open Executive Contributors, [Apache License 2.0](../licenses/Apache-2.0.txt)). Each file carries a notice of its source and changes; those three files remain under Apache 2.0. See [NOTICE](../NOTICE.md).
