@@ -36,7 +36,9 @@ Most items here fail silently: the command succeeds and the result is wrong. Tha
 
 ## Escape sequences and invisible bytes
 
-- **Write code that contains backslash escapes with the file-edit tool, not through a shell heredoc.** Depending on the tool layer, `\b`, `\n`, `\t` or `\0` in a heredoc body can arrive in the file as raw control bytes, even with a quoted delimiter. Why: one NUL byte makes git treat the whole file as binary, which hides it from diff and code review, so the change can land without anyone reading it.
+- **Write code that contains backslash escapes with the file-edit tool, then run the file; don't pass it through the shell tool.** The tool layer can rewrite backslashes before the shell sees them. Observed in Claude Code's Bash tool on Windows (Git Bash): two consecutive backslashes arrived as one, inside single quotes, a quoted heredoc and `python -c` alike, while a single backslash sequence passed unchanged. A Python string written with an escaped backslash then reaches the interpreter as a bare escape: an escaped `0` becomes a NUL byte, and in a regex an escaped `b` becomes a backspace character instead of a word boundary. Why: one NUL byte makes git treat the whole file as binary, which hides it from diff and code review, so the change can land without anyone reading it.
+- **Test the exact layer before writing a rule about it.** Pipe the output of a known string through `od -c` in the same tool the agent uses. Why: a guessed mechanism ("the heredoc processes escapes") produces a rule that doesn't prevent the failure.
+- **If the rule keeps getting broken, enforce it.** [`guard-backslash.py`](../../hooks/guard-backslash.py) (Claude Code, Bash tool) denies a command with two consecutive backslashes and tells the agent to write the code to a file. Install it only if your setup shows the conversion.
 - **Verify bytes, not appearances.** Control characters are invisible in `cat` and `grep` output. Check with Python:
   ```bash
   python -c "import sys; d=open(sys.argv[1],'rb').read(); print('NUL:', d.count(bytes([0])), 'ctrl:', sorted({b for b in d if b < 9 or 13 < b < 32}))" path/to/file

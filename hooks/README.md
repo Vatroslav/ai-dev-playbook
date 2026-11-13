@@ -9,11 +9,12 @@ Why these exist and what they defend against: [security guide](../docs/agent/sec
 
 | File | Event / matcher | Level | Decision | What it does |
 |---|---|---|---|---|
-| `guard-rm.sh` + `guard-rm-reason.py` | PreToolUse `Bash\|PowerShell` | user | ask (Codex: block) | Asks before a delete that has no undo. Silent for temp files and for files tracked by git with no uncommitted changes. Catches `rm`, PowerShell `Remove-Item`/`del`/`rd`, `find -delete`, `xargs rm`, .NET `Delete()`, nested `bash -c`/`cmd /c`/`eval`, and Python/Node delete calls in inline code. |
+| `guard-rm.sh` + `guard-rm-reason.py` | PreToolUse `Bash\|PowerShell` | user | ask (Codex: block) | Asks before a delete that has no undo. Silent for temp files and for files tracked by git with no uncommitted changes. Catches `rm`, PowerShell `Remove-Item`/`del`/`rd`, `find -delete`, `xargs rm`, .NET `Delete()`, nested `bash -c`/`cmd /c`/`eval`, and Python/Node delete calls in inline code. A self-test of the guard with a literal delete in the command is denied to the agent instead of prompting the human. |
 | `guard-git-add-all.sh` | PreToolUse `Bash\|PowerShell` | user | deny | Blocks `git add -A/./--all` and any `git commit` without explicit paths (`git commit -m "..." -- path1 path2`). |
 | `guard-secrets.sh` | PreToolUse `Bash\|PowerShell` | user | deny | Blocks shell commands that touch a `secrets/` path or read a real env file (`.env`, `.env.local`, `.env.production`...). `.env.example` stays readable. |
 | `guard-git-remote.sh` | PreToolUse `Bash\|PowerShell` | user | deny | Pushes only to remotes that already exist: blocks `git remote add/set-url`, `git config remote.*.url`, and `git push <url>`. |
 | `check-delete-transaction.sh` | PreToolUse `Bash\|PowerShell` | user | deny / ask | In commands that call a SQL client: `DELETE FROM` without `BEGIN` is denied, `DROP`/`TRUNCATE` asks. |
+| `guard-backslash.py` | PreToolUse `Bash\|PowerShell` (acts on `Bash` only) | user | deny | Denies a Bash command with two consecutive backslashes, which the Bash tool turned into one before the shell saw them in at least one setup (see [shell guide](../docs/agent/shell-and-environment.md#escape-sequences-and-invisible-bytes)). Test your setup first; install only if it shows the conversion. Claude only. |
 | `guard-paths.sh` | PreToolUse `Write\|Edit` | user | ask | Asks before overwriting an existing file that is not in any git repo (no undo). Silent for new files, repos and temp. Claude only. |
 | `check-version-bump.sh` | PreToolUse `Bash\|PowerShell` | project | deny / warn | Intent-based version guard on `git commit`: source in the commit needs a conventional type; `feat`/`fix`/`perf`/breaking need the version line bumped in the same commit. Edit the config block at the top. |
 | `check-version-decrease.sh` | PreToolUse `Write\|Edit` | project | deny | Blocks an edit that lowers the version in `package.json`, `VERSION`, `pyproject.toml`, `build.gradle(.kts)`, `app.json`. Edit `RULES`. Claude only. |
@@ -38,8 +39,8 @@ User level (each teammate, once per machine):
 ```bash
 cd <this-playbook>
 mkdir -p ~/.claude/hooks
-cp hooks/guard-*.sh hooks/guard-rm-reason.py hooks/check-delete-transaction.sh \
-   hooks/freshness-check.py hooks/guard-controller.py hooks/test-guard-rm.sh ~/.claude/hooks/
+cp hooks/guard-*.sh hooks/guard-*.py hooks/check-delete-transaction.sh \
+   hooks/freshness-check.py hooks/test-guard-rm.sh ~/.claude/hooks/
 chmod +x ~/.claude/hooks/*.sh
 ```
 
@@ -62,7 +63,7 @@ Copy `claude-settings.project.example.json` to `.claude/settings.json` (committe
 After install:
 - Settings edits are normally picked up by the file watcher. If a hook does not fire, restart the session, then pipe-test it (below).
 - `/hooks` in Claude Code shows the configured hooks (read-only).
-- Run `python ~/.claude/hooks/guard-controller.py` once: the first run records the current state of your clones (set `GUARD_REPOS_ROOT` to the folder that holds them) and must end with "All good." With the user settings example and the scripts above installed, it registers 7 hook scripts and every probe passes.
+- Run `python ~/.claude/hooks/guard-controller.py` once: the first run records the current state of your clones (set `GUARD_REPOS_ROOT` to the folder that holds them) and must end with "All good." With the user settings example and the scripts above installed, it registers 8 hook scripts and every probe passes.
 
 ## Install for Codex
 
@@ -133,8 +134,8 @@ Rules for tests:
 
 | Suite | Covers | Run | Result on Windows / Git Bash |
 |---|---|---|---|
-| `test-guard-rm.sh` | guard-rm: false positives, temp targets, real deletes, .NET, nested shells, heredocs, Python/Node code, git-undo rule in a throwaway repo, Codex dialect, fallbacks | `bash hooks/test-guard-rm.sh` | 131 of 131 pass |
-| `test-hooks.py` | every other hook: syntax, LF endings, JSON validity, pipe tests, throwaway repos for version bump, sync-main and freshness, fake formatter for format-on-save, gitleaks pre-commit | `python hooks/test-hooks.py` | 132 of 132 pass |
+| `test-guard-rm.sh` | guard-rm: false positives, temp targets, real deletes, .NET, nested shells, heredocs, Python/Node code, git-undo rule in a throwaway repo, Codex dialect, fallbacks | `bash hooks/test-guard-rm.sh` | 136 of 136 pass |
+| `test-hooks.py` | every other hook: syntax, LF endings, JSON validity, pipe tests, throwaway repos for version bump, sync-main and freshness, fake formatter for format-on-save, gitleaks pre-commit | `python hooks/test-hooks.py` | 141 of 141 pass |
 | `test-guard-controller.py` | the health check catches: unregistered guard, missing file, missing probe, broken guard, missing Python (guards fail closed, degradation reported), renamed MCP tool, new project hook / `.mcp.json` / skill plugin, broken settings | `python hooks/test-guard-controller.py` | 12 of 12 pass |
 
 Not yet run on macOS or Linux; run all three there before relying on them. `test-hooks.py` and `test-guard-controller.py` need a scratch folder outside the system temp dir and outside any git repo (default: your home folder; override with `GUARD_TEST_BASE`). Run the suites in CI on the repo that holds these files.
@@ -163,6 +164,13 @@ A hook that fails silently looks exactly like a hook that lets the call through.
 - **"Could not determine" is not "nothing to check".** When a lookup the gate depends on fails, deny with a retry instruction instead of returning early and letting the call through. Two cases from practice:
   - In a shallow clone (`git fetch --depth`), `git merge-base HEAD origin/main` can exit 1 with no output, because the history is cut off above the branch base. A gate that reads this as "not a repo" skips the review. Check `git rev-parse --is-shallow-repository`, run `git fetch --deepen=<n> origin main` and retry; if there is still no base, deny and suggest `git fetch --unshallow origin`.
   - A gate that also blocks `gh pr merge --auto` for a branch whose review did not finish needs the PR's branch name (`gh pr view <n> --json headRefName`). If that call fails, deny arming auto-merge rather than arm it blind.
+- **A gate must see every way the gated command can run.** Lessons from a push gate in daily use:
+  - Match every tool that can run it. A gate on `Bash` alone let `git push` through the PowerShell tool unreviewed. With `Bash|PowerShell`, also parse PowerShell forms: `;` chains commands, `git.exe`, any letter case, a command inside `{ }` or `$( )`, a redirect glued to the command (`git push>$null`).
+  - Review the repo the command actually goes to. `git -C <dir>`, `cd`, `Set-Location`/`Push-Location`/`Pop-Location` before the push decide which checkout is pushed; a gate that reviews the session's folder reviews the wrong code. If the target can't be read from the command, deny with a hint to run the push on its own.
+  - Check every gated action in the command, not the first match. A push and `gh pr merge --auto` chained in one command skipped the review in practice.
+  - Don't let a new commit erase an open finding. Carry findings over to the next round until a separate check against the current code confirms each one is fixed.
+  - Cap the rounds: after the third review round that still has findings, block auto-merge and hand the branch to a human.
+- **Call project hooks through `$CLAUDE_PROJECT_DIR`, never a path relative to the current folder.** The session's folder follows `cd` and `Set-Location`. From a subfolder, `bash .claude/hooks/x.sh` exits 127 (file not found), which counts as a non-blocking error, so the hook silently stops working. A hook that reads root-relative paths (a version file) must itself go to the repo root first, or it misjudges commits made from a subfolder.
 - A heredoc body consumed by an interpreter or tool (`python - <<'EOF'`, `git commit -F- <<'EOF'`) is data, not shell.
 - Exact-name matchers (only letters, digits, `_`, `-`) compare whole tool names: a renamed MCP tool silently disables the guard. The guard controller checks this against recent transcripts.
 - Store the file with LF endings (`.gitattributes` here does that) and the exec bit (`git update-index --chmod=+x`).

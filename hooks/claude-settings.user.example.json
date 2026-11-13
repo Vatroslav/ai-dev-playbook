@@ -129,7 +129,8 @@
           { "type": "command", "command": "bash ~/.claude/hooks/guard-git-add-all.sh" },
           { "type": "command", "command": "bash ~/.claude/hooks/guard-secrets.sh" },
           { "type": "command", "command": "bash ~/.claude/hooks/guard-git-remote.sh" },
-          { "type": "command", "command": "bash ~/.claude/hooks/check-delete-transaction.sh" }
+          { "type": "command", "command": "bash ~/.claude/hooks/check-delete-transaction.sh" },
+          { "type": "command", "command": "python ~/.claude/hooks/guard-backslash.py 2>/dev/null || python3 ~/.claude/hooks/guard-backslash.py" }
         ]
       },
       {
