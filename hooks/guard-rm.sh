@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # PreToolUse hook (matcher Bash|PowerShell): force an "ask" prompt for a command that really
-# deletes something that has no undo. Never blocks in Claude Code, only asks.
+# deletes something that has no undo. In Claude Code it only asks, except for a self-test of
+# this guard with a literal delete in the command, which is denied to the agent (see below).
 #
 # Why: a broad Bash(*) allow otherwise lets deletes run without confirmation. The criterion is
 # irreversibility, not location:
@@ -58,7 +59,20 @@ case "$COMMAND" in
   "rm -f /tmp/example-skill-flag") exit 0 ;;
 esac
 
+# A command that tests this guard (it names guard-rm-reason.py, guard-rm.sh or a test-guard
+# script) and also contains a delete gets a deny towards the agent instead of a prompt: the
+# human would see what looks like a real delete with no context and deny it, or learn to
+# approve prompts blindly. The agent builds the trigger string from parts or runs the suite.
+IS_SELF_TEST=0
+printf '%s' "$COMMAND" | grep -qE 'guard-rm-reason\.py|guard-rm\.sh|test-guard' && IS_SELF_TEST=1
+SELF_TEST_REASON="This command tests the delete guard with a literal delete in it, so the human would get a prompt that looks like a real delete. Build the test string from parts (e.g. \"r\"\"m -rf build\") or run bash hooks/test-guard-rm.sh. If the command also really deletes something, run that delete as a separate command."
+
 block_or_ask() {
+  if [ "$IS_SELF_TEST" = 1 ] && [ "$DIALECT" != codex ]; then
+    "$PY" -c "import json,sys; print(json.dumps({'hookSpecificOutput':{'hookEventName':'PreToolUse','permissionDecision':'deny','permissionDecisionReason':sys.argv[1]}}))" "$SELF_TEST_REASON" 2>/dev/null \
+      || echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"This command tests the delete guard with a literal delete in it. Build the test string from parts or run the test suite."}}'
+    exit 0
+  fi
   if [ "$DIALECT" = codex ]; then
     echo "$1 Codex hooks cannot ask for confirmation, so this call is blocked: ask the human to run it." >&2
     exit 2

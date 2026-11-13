@@ -161,6 +161,30 @@ try:
     bash_case(A, "git commit -m x # -- a.md", "deny")
     bash_case(A, "git commit -m \"$(cat <<'EOF'\nfeat: x\n\nbody; more\nEOF\n)\" -- src/a.ts", "pass")
     bash_case(A, "bash -c \"git commit -m x\"", "deny")
+    bash_case(A, "python -c \"print('git commit -m x')\"", "deny")
+    for cmd, want_text in [("bash -c \"git commit -m x\"", "inside quotes"),
+                           ("git commit -m x", "without paths")]:
+        got, detail = run_hook(A, {"tool_name": "Bash", "tool_input": {"command": cmd}})
+        check(f"{A} reason for {cmd!r}", want_text if want_text in detail else detail[:120], want_text)
+
+    # ---------------------------------------------------------------- guard-backslash
+    def py_hook(script, tool, cmd):
+        r = subprocess.run([sys.executable, str(HERE / script)], capture_output=True, text=True,
+                           encoding="utf-8", input=json.dumps({"tool_name": tool, "tool_input": {"command": cmd}}))
+        out = r.stdout.strip()
+        if out:
+            return json.loads(out)["hookSpecificOutput"]["permissionDecision"]
+        return "pass" if r.returncode == 0 else f"exit{r.returncode}"
+
+    BS = chr(92)  # built here so no escaped backslash appears in this file's source
+    for tool, cmd, want in [
+        ("Bash", f"echo 'a{BS * 2}b'", "deny"),
+        ("Bash", f"python -c \"import re; print(re.findall('{BS * 2}bx', 'x'))\"", "deny"),
+        ("Bash", f"printf 'a{BS}nb'", "pass"),
+        ("Bash", "git status", "pass"),
+        ("PowerShell", f"Write-Output 'a{BS * 2}b'", "pass"),
+    ]:
+        check(f"guard-backslash.py {tool} {cmd[:50]!r}", py_hook("guard-backslash.py", tool, cmd), want)
 
     # ---------------------------------------------------------------- guard-paths
     P = "guard-paths.sh"

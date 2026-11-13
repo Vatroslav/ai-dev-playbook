@@ -77,11 +77,19 @@ TESTS = {
         ("Bash", {"command": "git commit -m x -- a.md && git commit -m y"}, "deny"),
         ("Bash", {"command": "cat > notes.md <<'EOF'\ngit commit -m x\nEOF"}, "pass"),
         ("Bash", {"command": "bash <<'EOF'\ngit commit -m x\nEOF"}, "deny"),
+        ("Bash", {"command": "python -c \"print('git commit -m x')\""}, "deny"),
     ],
     "guard-rm.sh": [
         ("Bash", {"command": "rm -rf build"}, "ask"),
         ("PowerShell", {"command": "Remove-Item -Recurse dist"}, "ask"),
         ("Bash", {"command": "rm tmp.py"}, "pass"),
+        # a self-test of the guard with a literal delete: denied to the agent, no prompt for the human
+        ("Bash", {"command": "python ~/.claude/hooks/guard-rm-reason.py < x.txt; rm -rf build"}, "deny"),
+    ],
+    "guard-backslash.py": [
+        ("Bash", {"command": "echo 'a" + chr(92) * 2 + "b'"}, "deny"),
+        ("Bash", {"command": "printf 'a" + chr(92) + "nb'"}, "pass"),
+        ("PowerShell", {"command": "Write-Output 'a" + chr(92) * 2 + "b'"}, "pass"),
     ],
     "guard-paths.sh": [
         ("Edit", {"file_path": UNVERSIONED_PATH}, "ask"),

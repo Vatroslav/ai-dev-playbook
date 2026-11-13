@@ -203,6 +203,18 @@ GUARD_RM_GIT_UNDO=0 checkc ASK "$REPO" 'rm src/lib/b.ts'
 rm -rf "$TMPROOT"
 export GUARD_RM_GIT_UNDO=0
 
+# --- a self-test of the guard with a literal delete is denied to the agent, never a prompt ---
+decision() {  # decision <command> -> DENY / ASK / PASS
+  local out
+  out=$(payload "" "$1" | bash "$H")
+  case "$out" in *'"deny"'*) echo DENY ;; *'"ask"'*) echo ASK ;; '') echo PASS ;; *) echo "?" ;; esac
+}
+result DENY "$(decision 'python hooks/guard-rm-reason.py < x.txt; rm -rf build')" "self-test via guard-rm-reason.py with a real-looking delete"
+result DENY "$(decision 'bash ~/.claude/hooks/test-guard-x.sh && Remove-Item -Recurse dist')" "self-test via a test-guard script, PowerShell delete"
+result PASS "$(decision 'bash hooks/test-guard-rm.sh')" "running the suite itself"
+result PASS "$(decision 'diff hooks/guard-rm.sh /tmp/x; rm tmp.py')" "guard named, temp delete only"
+result ASK "$(decision 'rm -rf build')" "same delete without the guard name still asks"
+
 # --- Codex dialect: ask is not supported there, so the guard blocks with exit 2 ---
 ERRF=$(mktemp)
 out=$(payload "" 'rm -rf build' | bash "$H" --codex 2>"$ERRF"); code=$?

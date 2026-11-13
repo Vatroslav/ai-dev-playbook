@@ -215,10 +215,19 @@ if not DETECT.search(shell):
     verdict = "ok"
 else:
     segs = [s for s in re.split(r"[;&|\n]", masked) if DETECT.search(s)]
-    verdict = "ok" if segs and all(ALLOW.search(s) for s in segs) else "deny"
+    if not segs:
+        verdict = "deny-text"  # the commit is visible only inside quotes or a nested shell
+    else:
+        verdict = "ok" if all(ALLOW.search(s) for s in segs) else "deny"
 sys.stdout.write(verdict)
 PYEOF
   VERDICT=$(printf '%s' "$INPUT" | "$PY" -c "$COMMIT_PY" 2>/dev/null)
+  # Still a deny (fail closed), but with its own instruction: the generic "commit without paths"
+  # message misleads when the commit is only a string inside python -c, bash -c or echo.
+  if [ "$VERDICT" = deny-text ]; then
+    echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"git commit appears only inside quotes or a nested shell (python -c, bash -c, echo, a heredoc fed to a shell), so the guard cannot check which paths it commits. If it is only text (e.g. a string in code), split it (\"git \" + \"commit\") or put the code in a file. If it is a real commit, run it directly: git commit -m \"...\" -- path1 path2"}}'
+    exit 0
+  fi
   if [ "$VERDICT" = deny ] || { [ "$VERDICT" != ok ] \
     && ! printf '%s' "$COMMAND" | grep -Eq "${B}commit([^[:alnum:]_;&|-][^;&|]*)?([[:space:]]--[[:space:]]+[^[:space:]-]|--only|--no-edit)"; }; then
     echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"git commit without paths commits the whole index, including files another session or agent staged. Use: git commit -m \"...\" -- path1 path2"}}'
